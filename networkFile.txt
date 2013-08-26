@@ -1,0 +1,15 @@
+N 50 100 "Central"
+N 200 300 "Authentication server"
+N 600 300 "Authentication server is done loading"
+N 300 100 "Au"
+N 700 100 "Authentication"
+N 300 500 "Central system"
+N 100 700 "Central goodness"
+N 100 200 "Central over"
+C "Central" R "Authentication server" T
+C "Central over" B "Authentication server" L
+C "Authentication server" T "Au" B
+C "Authentication server" B "Central goodness" T
+C "Authentication server" B "Central system" T
+C "Authentication server" R "Authentication server is done loading" L
+C "Authentication server" R "Authentication" L
