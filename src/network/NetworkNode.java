@@ -43,6 +43,7 @@ public class NetworkNode
     */
 	public void setName(String newName){
       this.name = newName;
+      if(this.network != null) this.network.nodeChanged(this);
     }
 
     /**
@@ -65,6 +66,8 @@ public class NetworkNode
 	public void setLocation(double xCenter, double yCenter){
       x = xCenter;
       y = yCenter;
+      
+      if(this.network != null) this.network.nodeChanged(this);
     }
 
     /**

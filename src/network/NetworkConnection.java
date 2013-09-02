@@ -45,6 +45,8 @@ public class NetworkConnection
     private String node2;
     private Side side2;
     private NetworkModel network;
+    private NetworkNode startNode;
+    private NetworkNode endNode;
 
     /**
     * Creates a new connection
@@ -61,10 +63,12 @@ public class NetworkConnection
     }
     
     public String getNode1() {
+      if(startNode != null) return startNode.getName();
       return node1;
     }
     
     public String getNode2() {
+      if(startNode != null) return endNode.getName();
       return node2;
     }
     
@@ -76,8 +80,24 @@ public class NetworkConnection
       return side2;
     }
     
+    public void setStartNode(NetworkNode node) {
+      this.startNode = node;
+    }
+    
+    public void setEndNode(NetworkNode node) {
+      this.endNode = node;
+    }
+    
+    public NetworkNode getStartNode() {
+      return startNode;
+    }
+    
+    public NetworkNode getEndNode() {
+      return endNode;
+    }
+    
     public String toString() {
-      return "C " + node1 + " " + side1.toString() + " " + node2 + " " + side2.toString();
+      return "C " + getNode1() + " " + side1.toString() + " " + getNode2() + " " + side2.toString();
     }
     
     public static NetworkConnection fromString(String s) {

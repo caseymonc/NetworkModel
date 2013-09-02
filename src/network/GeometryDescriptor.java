@@ -4,6 +4,8 @@
  */
 package network;
 
+import java.awt.Point;
+
 /**
  *
  * @author caseymoncur
@@ -26,14 +28,16 @@ public class GeometryDescriptor {
   private int index;
   private GeomeryType type;
   private int textIndex;
+  private Point point;
   
-  public GeometryDescriptor(int index, GeomeryType type) {
+  public GeometryDescriptor(int index, GeomeryType type, Point point) {
     this.index = index;
     this.type = type;
+    this.point = point;
   }
   
-  public GeometryDescriptor(int index, GeomeryType type, int textIndex) {
-    this(index, type);
+  public GeometryDescriptor(int index, GeomeryType type, int textIndex, Point point) {
+    this(index, type, point);
     this.textIndex = textIndex;
   }
   
@@ -41,9 +45,22 @@ public class GeometryDescriptor {
     return index;
   }
   
+  public int getTextIndex() {
+    return textIndex;
+  }
+  
   public GeomeryType getType() {
     return type;
   }
+  
+  public Point getPoint() {
+    return point;
+  }
+  
+  public void updateTextIndex(float width, int inc) {
+    point.setLocation(point.getX() + width * inc, point.getY());
+    textIndex+= inc; 
+ }
   
   public String toString() {
     if(type == GeomeryType.Text)

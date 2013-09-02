@@ -11,8 +11,6 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Objects of this class contain information about a network nodes and their connections.  
@@ -23,6 +21,7 @@ public class NetworkModel
     private boolean areChangesSaved;
     private List<NetworkNode> nodes;
     private List<NetworkConnection> connections;
+    private ModelListener listener;
     /**
      * Creates an empty network model that has a unique default file name and no contents
      */
@@ -57,6 +56,10 @@ public class NetworkModel
          }
       }
       br.close();
+    }
+    
+    public void setListener(ModelListener listener) {
+      this.listener = listener;
     }
     
     /**
@@ -131,6 +134,10 @@ public class NetworkModel
         areChangesSaved = false;
         connections.add(newConnection);
         newConnection.setNetwork(this);
+        NetworkNode startNode = this.getNodeForName(newConnection.getNode1());
+        NetworkNode endNode = this.getNodeForName(newConnection.getNode2());
+        newConnection.setStartNode(startNode);
+        newConnection.setEndNode(endNode);
     }
 
     /**
@@ -191,6 +198,14 @@ public class NetworkModel
       }
       return null;
     }
+    
+    public void nodeChanged(NetworkNode node) {
+      if(this.listener != null) this.listener.NodeChanged(node);
+    }
+    
+    public void connectionChanged(NetworkConnection connection) {
+      if(this.listener != null) this.listener.ConnectionChanged(connection);
+    }
 
     /**
     * This method is a regression test to verify that this class is
@@ -249,5 +264,14 @@ public class NetworkModel
       if(!success) System.out.println("Incorrect thrown exception");
       
       if(success)System.out.println("NetworkModel OK");
+    }
+    
+    public interface ModelListener {
+      void NodeAdded(NetworkNode node);
+      void NodeRemoved(NetworkNode node);
+      void NodeChanged(NetworkNode node);
+      void ConnectionAdded(NetworkConnection connection);
+      void ConnectionRemove(NetworkConnection connection);
+      void ConnectionChanged(NetworkConnection connection);
     }
 }
