@@ -62,7 +62,8 @@ public class NetworkView extends JFrame implements NetworkModel.ModelListener{
   private enum Mode {
     Normal,
     AddNode,
-    AddConnections
+    AddConnections,
+    Rotate
   }
   
   private static final int PADDING = 50;
@@ -331,6 +332,26 @@ public class NetworkView extends JFrame implements NetworkModel.ModelListener{
       addConnectionButton.addActionListener(new ActionListener(){
         public void actionPerformed(ActionEvent ae) {
           mode = Mode.AddConnections;
+          selectedConnectionNode = null;
+          repaint();
+        }
+      });
+      
+      JButton rotateButton = new JButton();
+      Image rotateImage = ImageIO.read(new File("images/1378201788_Synchronize.png"));
+      rotateButton.setIcon(new ImageIcon(rotateImage));
+      rotateButton.setSize(25, 25);
+      panel.add(rotateButton);
+      
+      rotateButton.setBorderPainted(false); 
+      rotateButton.setContentAreaFilled(false); 
+      rotateButton.setFocusPainted(false); 
+      rotateButton.setOpaque(false);
+      rotateButton.setFocusable(false);
+      
+      rotateButton.addActionListener(new ActionListener(){
+        public void actionPerformed(ActionEvent ae) {
+          mode = Mode.Rotate;
           selectedConnectionNode = null;
           repaint();
         }
