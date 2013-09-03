@@ -1,11 +1,15 @@
-N 50 100 "Central"
-N 200 300 "Authentication server"
-N 600 300 "Authentication server is done loading"
-N 300 100 "Au"
-N 700 100 "Authentication"
-N 300 500 "Central system"
-N 100 700 "Central goodness"
-N 100 200 "Central over"
+N 132.0 81.0 "Central"
+N 302.0 336.0 "Authentication server"
+N 689.0 395.0 "Authentication server is done loading"
+N 300.0 100.0 "Au"
+N 700.0 100.0 "Authentication"
+N 300.0 500.0 "Central system"
+N 100.0 700.0 "Central goodness"
+N 100.0 200.0 "Central over"
+N 537.0 612.0 "Test Node"
+N 485.0 76.0 "Test Node 2"
+N 63.0 439.0 "New Node is over"
+N 139.0 497.0 "Remove New Node"
 C "Central" R "Authentication server" T
 C "Central over" B "Authentication server" L
 C "Authentication server" T "Au" B
@@ -13,3 +17,20 @@ C "Authentication server" B "Central goodness" T
 C "Authentication server" B "Central system" T
 C "Authentication server" R "Authentication server is done loading" L
 C "Authentication server" R "Authentication" L
+C "Test Node 2" L "Au" T
+C "Test Node 2" R "Authentication" T
+C "Test Node" T "Authentication server is done loading" B
+C "Test Node" R "Authentication server is done loading" B
+C "Test Node" L "Authentication server is done loading" B
+C "Test Node" B "Authentication server is done loading" B
+C "Test Node" T "Authentication server is done loading" R
+C "Test Node" T "Authentication server is done loading" L
+C "Test Node" T "Authentication server is done loading" T
+C "Test Node" T "Authentication server is done loading" R
+C "Authentication server is done loading" R "Test Node" T
+C "Test Node" T "Authentication server is done loading" R
+C "Test Node" L "Central system" B
+C "Central over" L "Central goodness" L
+C "New Node is over" T "Central over" B
+C "Remove New Node" L "Central goodness" L
+C "Remove New Node" B "Central goodness" T

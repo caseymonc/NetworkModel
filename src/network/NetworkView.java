@@ -5,12 +5,19 @@
 package network;
 
 import java.awt.BasicStroke;
+import java.awt.BorderLayout;
+import java.awt.Button;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.LayoutManager;
 import java.awt.Point;
 import java.awt.Shape;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
@@ -20,10 +27,31 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.font.TextHitInfo;
 import java.awt.font.TextLayout;
+import java.awt.geom.GeneralPath;
 import java.awt.geom.Line2D;
+import java.awt.geom.Path2D;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import javax.imageio.ImageIO;
+import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.KeyStroke;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import network.GeometryDescriptor.GeomeryType;
 import network.NetworkConnection.Side;
+import static network.NetworkConnection.Side.Left;
 
 /**
  *
@@ -31,32 +59,71 @@ import network.NetworkConnection.Side;
  */
 public class NetworkView extends JFrame implements NetworkModel.ModelListener{
   
+  private enum Mode {
+    Normal,
+    AddNode,
+    AddConnections
+  }
+  
   private static final int PADDING = 50;
+  private static final int BUTTONS_PADDING = 80;
+  private static final Color CONNECTION_COLOR = new Color(0x777777);
+  private static final Color SELECTED_COLOR   = new Color(0xF00F00);
+  private static final Color NODE_COLOR       = new Color(0x66ccff);
+  private static final Color TEXT_COLOR       = new Color(0x000000);
+  private static final Color BACKGROUND_COLOR = new Color(0xFFFFFF);
+  private static final int BEZIER_SIZE = 100;
+  
+  private static Set<NetworkView> activeViews = new HashSet<NetworkView>();
   
   private NetworkModel model;
   private FontMetrics fontMetrics;
   private GeometryDescriptor selectedItem;
+  private NetworkNode selectedConnectionNode;
+  private Side selectedConnectionSide;
+  private NetworkNode selectedDraggingNode;
   private MouseEvent startEvent;
   private MouseEvent lastEvent;
+  private Mode mode = Mode.Normal;
   
-  public NetworkView(NetworkModel model) {
+  public NetworkView(final NetworkModel model) {
     super("Network");
+    activeViews.add(this);
     this.model = model;
-    model.setListener(this);
+    model.addListener(this);
+    this.setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
     
     NetworkNode maxX = model.getMaxXNode();
     NetworkNode maxY = model.getMaxYNode();
     
-    this.setBounds(0, 0, (int)maxX.getX() + getNodeWidth(maxX) + PADDING, (int)maxY.getY() + getNodeHeight(maxY) + PADDING);
+    this.setBounds(0, 0, (int)maxX.getX() + getNodeWidth(maxX) + BUTTONS_PADDING + PADDING, (int)maxY.getY() + getNodeHeight(maxY) + PADDING);
     
     this.addWindowListener(new WindowAdapter(){
       public void windowClosing(WindowEvent evt) {
-        System.exit(0);
+        if(NetworkView.this.model.isLastListener() && NetworkView.this.model.unsavedChanges()) {
+          int result = JOptionPane.showConfirmDialog(null, "Save before closing?");
+          if(result == JOptionPane.NO_OPTION) exitWindow();
+          else if(result == JOptionPane.YES_OPTION) {
+            NetworkView.this.model.save();
+            exitWindow();
+          }
+        } else {
+          exitWindow();
+        }        
+      }
+
+      private void exitWindow() {
+        activeViews.remove(NetworkView.this);
+        if(activeViews.size() > 0){
+          NetworkView.this.model.removeListener(NetworkView.this);
+          NetworkView.this.dispose();
+        } else {
+          System.exit(0);
+        }
       }
     });
     
-    this.setVisible(true);
-        
+    
     this.addMouseListener(new MouseListener(){
 
       @Override
@@ -69,11 +136,36 @@ public class NetworkView extends JFrame implements NetworkModel.ModelListener{
 
       @Override
       public void mouseReleased(MouseEvent me) {
-        GeometryDescriptor descriptor = pointGeometry(me.getPoint());
-        selectedItem = descriptor;
-        if(descriptor != null) System.out.println(descriptor.toString());
-        startEvent = null;
-        lastEvent = null;
+        transformEvent(me);
+        
+        if (mode == Mode.AddNode) {
+          NetworkNode node = new NetworkNode("\"New Node\"", me.getX(), me.getY());
+          NetworkView.this.model.addNode(node);
+        } else if (mode == Mode.AddConnections) {
+          for(int i = 0; i < model.nNodes(); i++) {
+            NetworkNode node = model.getNode(i);
+            Side side = getConnectionPoint(node, me.getPoint());
+            if(side != null) {
+              if(selectedConnectionNode != null) {
+                model.addConnection(new NetworkConnection(selectedConnectionNode.getName(), 
+                                                          selectedConnectionSide, 
+                                                          node.getName(), 
+                                                          side));
+                selectedConnectionNode = null;
+                selectedConnectionSide = null;
+              } else {
+                selectedConnectionNode = node;
+                selectedConnectionSide = side;
+              }
+            }
+          }
+        } else {
+          GeometryDescriptor descriptor = pointGeometry(me.getPoint());
+          selectedItem = descriptor;
+          startEvent = null;
+          lastEvent = null;
+        }
+        selectedDraggingNode = null;
         repaint();
       }
 
@@ -89,21 +181,23 @@ public class NetworkView extends JFrame implements NetworkModel.ModelListener{
 
       @Override
       public void mouseDragged(MouseEvent me) {
+        if(mode != Mode.Normal) return;
+        transformEvent(me);
         GeometryDescriptor descriptor = pointGeometry(me.getPoint());
         if(descriptor.getType() == GeomeryType.Node) {
           NetworkNode node = NetworkView.this.model.getNode(descriptor.getIndex());
           if(startEvent == null) {
             startEvent = me;
             lastEvent = me;
-          } else if(me.getPoint().distance(startEvent.getPoint()) > 3){
-            node.setLocation(node.getX() + (me.getPoint().getX() - lastEvent.getPoint().getX()), 
-                    node.getY() + (me.getPoint().getY() - lastEvent.getPoint().getY()));
-            lastEvent = me;
+            selectedDraggingNode = node;
           }
           
-        } else {
-          startEvent = null;
-          lastEvent = null;
+        }
+        
+        if(selectedDraggingNode != null && me.getPoint().distance(startEvent.getPoint()) > 3){
+          selectedDraggingNode.setLocation(selectedDraggingNode.getX() + (me.getPoint().getX() - lastEvent.getPoint().getX()), 
+                  selectedDraggingNode.getY() + (me.getPoint().getY() - lastEvent.getPoint().getY()));
+          lastEvent = me;
         }
       }
 
@@ -146,13 +240,199 @@ public class NetworkView extends JFrame implements NetworkModel.ModelListener{
       }
     });
     
-    this.setBackground(new Color(0xF4F4F4));
+    this.setBackground(BACKGROUND_COLOR);
+  
+    createMenuBar();
+    addSideButtons();
+    
+    this.setVisible(true);
+  }
+  
+  public Side getConnectionPoint(NetworkNode node, Point point) {
+    if(isConnectionPoint(node, point, Side.Bottom))
+      return Side.Bottom;
+    if(isConnectionPoint(node, point, Side.Top))
+      return Side.Top;
+    if(isConnectionPoint(node, point, Side.Left))
+      return Side.Left;
+    if(isConnectionPoint(node, point, Side.Right))
+      return Side.Right;
+    
+    return null;
+  }
+  
+  public boolean isConnectionPoint(NetworkNode node, Point point, Side side) {
+    int x = getLineX(node, side);
+    int y = getLineY(node, side);
+    return (point.getX() - x) * (point.getX() - x) + (point.getY() - y) * (point.getY() - y) < (15 * 15);
+  }
+  
+  public void transformEvent(MouseEvent me) {
+    me.translatePoint(-BUTTONS_PADDING, -PADDING);
+  }
+  
+  public void addSideButtons() {
+    try {
+      JPanel panel = new JPanel();
+      panel.setPreferredSize(new Dimension(BUTTONS_PADDING, this.getHeight()));
+      
+      JButton normalModeButton = new JButton();
+      Image normalModeImage = ImageIO.read(new File("images/1378176668_Book_of_record.png"));
+      normalModeButton.setIcon(new ImageIcon(normalModeImage));
+      normalModeButton.setSize(25, 25);
+      panel.add(normalModeButton);
+      
+      normalModeButton.setBorderPainted(false); 
+      normalModeButton.setContentAreaFilled(false); 
+      normalModeButton.setFocusPainted(false); 
+      normalModeButton.setOpaque(false);
+      normalModeButton.setFocusable(false);
+      
+      normalModeButton.addActionListener(new ActionListener(){
+        public void actionPerformed(ActionEvent ae) {
+          mode = Mode.Normal;
+          selectedConnectionNode = null;
+          repaint();
+        }
+      });
+      
+      JButton addNodeButton = new JButton();
+      Image addNodeImage = ImageIO.read(new File("images/1378176590_Import.png"));
+      addNodeButton.setIcon(new ImageIcon(addNodeImage));
+      addNodeButton.setSize(25, 25);
+      panel.add(addNodeButton);
+      
+      addNodeButton.setBorderPainted(false); 
+      addNodeButton.setContentAreaFilled(false); 
+      addNodeButton.setFocusPainted(false); 
+      addNodeButton.setOpaque(false);
+      addNodeButton.setFocusable(false);
+      
+      addNodeButton.addActionListener(new ActionListener(){
+        public void actionPerformed(ActionEvent ae) {
+          mode = Mode.AddNode;
+          selectedConnectionNode = null;
+          repaint();
+        }
+      });
+      
+      JButton addConnectionButton = new JButton();
+      Image addConnectionImage = ImageIO.read(new File("images/1378176200_Network_connection.png"));
+      addConnectionButton.setIcon(new ImageIcon(addConnectionImage));
+      addConnectionButton.setSize(25, 25);
+      panel.add(addConnectionButton);
+      
+      addConnectionButton.setBorderPainted(false); 
+      addConnectionButton.setContentAreaFilled(false); 
+      addConnectionButton.setFocusPainted(false); 
+      addConnectionButton.setOpaque(false);
+      addConnectionButton.setFocusable(false);
+      
+      addConnectionButton.addActionListener(new ActionListener(){
+        public void actionPerformed(ActionEvent ae) {
+          mode = Mode.AddConnections;
+          selectedConnectionNode = null;
+          repaint();
+        }
+      });
+      
+      this.add(panel, BorderLayout.WEST);
+    } catch (IOException ex) {
+      Logger.getLogger(NetworkView.class.getName()).log(Level.SEVERE, null, ex);
+    }
+  }
+  
+  public void createMenuBar() {
+    JMenuBar menuBar = new JMenuBar();
+    
+    JMenu menu = new JMenu("File");
+    menuBar.add(menu);
+    
+    JMenuItem menuItem = new JMenuItem("Open");
+    menuItem.setAccelerator(KeyStroke.getKeyStroke(
+        KeyEvent.VK_O, ActionEvent.META_MASK));
+    menuItem.addActionListener(new ActionListener(){
+      public void actionPerformed(ActionEvent ae) {
+        openNewWindow();
+      }
+    });
+    menu.add(menuItem);
+    
+    menuItem = new JMenuItem("Save");
+    menuItem.setAccelerator(KeyStroke.getKeyStroke(
+        KeyEvent.VK_S, ActionEvent.META_MASK));
+    menuItem.addActionListener(new ActionListener(){
+      public void actionPerformed(ActionEvent ae) {
+        save();
+      }
+    });
+    menu.add(menuItem);
+    
+    menuItem = new JMenuItem("Save As");
+    menuItem.addActionListener(new ActionListener(){
+      public void actionPerformed(ActionEvent ae) {
+        //Create a file chooser
+        final JFileChooser fc = new JFileChooser();
+        //In response to a button click:
+        int returnVal = fc.showSaveDialog(NetworkView.this);
+        if (returnVal == JFileChooser.APPROVE_OPTION) {
+          File file = fc.getSelectedFile();
+          saveAs(file.getAbsolutePath());
+        }
+      }
+    });
+    menu.add(menuItem);
+    
+    this.setJMenuBar(menuBar);
+    
+  }
+  
+  private void openNewWindow() {
+    //Create a file chooser
+    final JFileChooser fc = new JFileChooser();
+    fc.setFileFilter(new FileNameExtensionFilter("TXT Files", "txt"));
+    //In response to a button click:
+    int returnVal = fc.showOpenDialog(NetworkView.this);
+    if (returnVal == JFileChooser.APPROVE_OPTION) {
+      File file = fc.getSelectedFile();
+      String fileName = file.getAbsolutePath();
+      NetworkModel model = NetworkModel.getModelForFileName(fileName);
+      if(model == null) {
+        try {
+          model = new NetworkModel(fileName);
+        } catch (FileNotFoundException ex) {
+          Logger.getLogger(Network.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (IOException ex) {
+          Logger.getLogger(Network.class.getName()).log(Level.SEVERE, null, ex);
+        }
+      }
+      
+      NetworkView view = new NetworkView(model);
+    }
+  }
+  
+  private void save() {
+    model.save();
+  }
+  
+  private void saveAs(String fileName) {
+    try {
+      model.setFileName(fileName);
+      model.save();
+      model = new NetworkModel(fileName);
+      model.addListener(this);
+    } catch (FileNotFoundException ex) {
+      Logger.getLogger(NetworkView.class.getName()).log(Level.SEVERE, null, ex);
+    } catch (IOException ex) {
+      Logger.getLogger(NetworkView.class.getName()).log(Level.SEVERE, null, ex);
+    }
   }
   
   public void paint(Graphics g1) {
     super.paint(g1);
     Graphics2D g = (Graphics2D)g1;
-    g.setStroke(new BasicStroke(2));
+    g.translate(BUTTONS_PADDING, PADDING);
+    g.setStroke(new BasicStroke(1));
     fontMetrics = g.getFontMetrics();
     NetworkNode selectedNode = null;
     NetworkConnection selectedConnection = null;
@@ -173,22 +453,22 @@ public class NetworkView extends JFrame implements NetworkModel.ModelListener{
     }
     for(int i = 0; i < model.nNodes(); i++){
       NetworkNode node = model.getNode(i);
-      g.setColor(new Color(0xA0D1E0));
+      g.setColor(NODE_COLOR);
       g.fillOval(getNodeX(node), 
                  getNodeY(node), 
                  getNodeWidth(node), 
                  getNodeHeight(node));
       
       if(node == selectedNode) 
-        g.setColor(new Color(0xF00F00));
+        g.setColor(SELECTED_COLOR);
       else
-        g.setColor(new Color(0x6D8398));
+        g.setColor(CONNECTION_COLOR);
       g.drawOval(getNodeX(node), 
                  getNodeY(node), 
                  getNodeWidth(node), 
                  getNodeHeight(node));
       
-      g.setColor(new Color(0x425363));
+      g.setColor(TEXT_COLOR);
       TextLayout text = new TextLayout(node.getName(), g.getFont(), ((Graphics2D)g).getFontRenderContext());
       if(node == selectedNode && selectedTextIndex > -1) {
         Graphics2D graphics = (Graphics2D) g.create();
@@ -208,9 +488,9 @@ public class NetworkView extends JFrame implements NetworkModel.ModelListener{
       NetworkConnection connection = model.getConnection(i);
       
       if(connection == selectedConnection)
-        g.setColor(new Color(0xF00F00));
+        g.setColor(SELECTED_COLOR);
       else
-        g.setColor(new Color(0x6D8398));
+        g.setColor(CONNECTION_COLOR);
       
       NetworkNode node1 = connection.getStartNode();
       NetworkNode node2 = connection.getEndNode();
@@ -222,10 +502,70 @@ public class NetworkView extends JFrame implements NetworkModel.ModelListener{
       int endX = getLineX(node2, connection.getSide2());
       int endY = getLineY(node2, connection.getSide2());
       
-      g.drawLine(startX, startY, endX, endY);
+      int p1X = getPX(startX, connection.getSide1());
+      int p1Y = getPY(startY, connection.getSide1());
+      
+      int p2X = getPX(endX, connection.getSide2());
+      int p2Y = getPY(endY, connection.getSide2());
+      
+      Path2D p = new GeneralPath();
+      p.moveTo(startX, startY);
+      p.curveTo(p1X, p1Y, p2X, p2Y, endX, endY);
+      
+      
+      g.draw(p);
+      //g.drawLine(startX, startY, endX, endY);
       
     }
+    
+    if(mode == Mode.AddConnections) {
+      for(int i = 0; i < model.nNodes(); i++) {
+        NetworkNode node = model.getNode(i);
+        drawPotentialConnectionCircle(node, Side.Bottom, g);
+        drawPotentialConnectionCircle(node, Side.Top, g);
+        drawPotentialConnectionCircle(node, Side.Left, g);
+        drawPotentialConnectionCircle(node, Side.Right, g);
+      }
+    }
   }
+  
+  private void drawPotentialConnectionCircle(NetworkNode node, Side side, Graphics2D g) {
+    int pointX = getLineX(node, side);
+    int pointY = getLineY(node, side);
+    if(selectedConnectionNode == node && side == selectedConnectionSide)
+      g.setColor(SELECTED_COLOR);
+    else
+      g.setColor(CONNECTION_COLOR);
+    g.drawOval(pointX - 15, pointY - 15, 30, 30);
+  }
+  
+  public int getPX(int x, Side side) {
+    int p1X = x;
+    switch(side){
+      case Left:
+        p1X -= BEZIER_SIZE;
+        break;
+      case Right:
+        p1X += BEZIER_SIZE;
+        break;
+    }
+    return p1X;
+  }
+  
+  public int getPY(int y, Side side) {
+    int p1Y = y;
+    switch(side){
+      case Top:
+        p1Y -= BEZIER_SIZE;
+        break;
+      case Bottom:
+        p1Y += BEZIER_SIZE;
+        break;
+    }
+    return p1Y;
+  }
+  
+  
   
   public int getTextX(NetworkNode node) {
     return ((int)node.getX() + getNodeWidth(node)/2) - (int)(node.getName().length() * 7.2);
@@ -348,12 +688,30 @@ public class NetworkView extends JFrame implements NetworkModel.ModelListener{
   private boolean isOnLine(Point point, NetworkConnection connection) {
     NetworkNode node1 = connection.getStartNode();
     NetworkNode node2 = connection.getEndNode();
-    double distance = Line2D.ptSegDist(getLineX(node1, connection.getSide1()), 
+    /*double distance = Line2D.ptSegDist(getLineX(node1, connection.getSide1()), 
                             getLineY(node1, connection.getSide1()), 
                             getLineX(node2, connection.getSide2()), 
                             getLineY(node2, connection.getSide2()), 
                             point.getX(), point.getY());
-    return distance >= 0 && distance < 1;
+    return distance >= 0 && distance < 1;*/
+    
+    int startX = getLineX(node1, connection.getSide1());
+    int startY = getLineY(node1, connection.getSide1());
+
+    int endX = getLineX(node2, connection.getSide2());
+    int endY = getLineY(node2, connection.getSide2());
+
+    int p1X = getPX(startX, connection.getSide1());
+    int p1Y = getPY(startY, connection.getSide1());
+
+    int p2X = getPX(endX, connection.getSide2());
+    int p2Y = getPY(endY, connection.getSide2());
+    
+    Path2D p = new GeneralPath();
+    p.moveTo(startX, startY);
+    p.curveTo(p1X, p1Y, p2X, p2Y, endX, endY);
+    
+    return p.contains(point);
   }
 
   private boolean isActionKey(KeyEvent event) {

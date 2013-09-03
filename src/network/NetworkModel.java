@@ -8,27 +8,52 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Objects of this class contain information about a network nodes and their connections.  
  */
 public class NetworkModel
 {
+    private static Map<String, NetworkModel> modelsByName;
+    
+    private static void initModelsByName() {
+      if(modelsByName == null) modelsByName = new HashMap<String, NetworkModel>();
+    }
+    
+    public static NetworkModel getModelForFileName(String name) {
+      initModelsByName();
+      return modelsByName.get(name);
+    }
+    
+    public static void setModelForFileName(String name, NetworkModel model) {
+      initModelsByName();
+      modelsByName.put(name, model);
+    }
+    
+  
     private String fileName;
     private boolean areChangesSaved;
     private List<NetworkNode> nodes;
     private List<NetworkConnection> connections;
-    private ModelListener listener;
+    private Set<ModelListener> listeners = new HashSet<ModelListener>();
+    
     /**
      * Creates an empty network model that has a unique default file name and no contents
      */
 	public NetworkModel (){
-        nodes = new ArrayList<NetworkNode>();
-        connections = new ArrayList<NetworkConnection>();
-        areChangesSaved = true;
+      nodes = new ArrayList<NetworkNode>();
+      connections = new ArrayList<NetworkConnection>();
+      areChangesSaved = true;
     }
 
 
@@ -46,6 +71,7 @@ public class NetworkModel
 	
     public void loadFile() throws FileNotFoundException, IOException {
       File file = new File(fileName);
+      setModelForFileName(file.getAbsolutePath(), this);
       BufferedReader br = new BufferedReader(new FileReader(file));
       String line;
       while ((line = br.readLine()) != null) {
@@ -58,10 +84,17 @@ public class NetworkModel
       br.close();
     }
     
-    public void setListener(ModelListener listener) {
-      this.listener = listener;
+    public void addListener(ModelListener listener) {
+      this.listeners.add(listener);
     }
     
+    public void removeListener(ModelListener listener) {
+      this.listeners.remove(listener);
+    }
+    
+    public boolean isLastListener() {
+      return listeners.size() == 1;
+    }
     /**
 	 * Returns the name of the file associated with this model.
 	 */
@@ -75,14 +108,45 @@ public class NetworkModel
    */
 	public void setFileName(String newFileName){
         this.fileName = newFileName;
+        File file = new File(fileName);
+        setModelForFileName(file.getAbsolutePath(), this);
     }
 
     /**
     * Saves the contents of this model to its file.
     */
 	public void save(){
-        //TODO: save to file
+      FileWriter writer = null;
+      try {
+        File file = new File(fileName);
+        file.delete();
+        file = new File(fileName);
+        String contents = generateFileContents();
+        writer = new FileWriter(file);
+        writer.write(contents);
         areChangesSaved = true;
+      } catch (IOException ex) {
+        Logger.getLogger(NetworkModel.class.getName()).log(Level.SEVERE, null, ex);
+      } finally {
+        try {
+          writer.close();
+        } catch (IOException ex) {
+          Logger.getLogger(NetworkModel.class.getName()).log(Level.SEVERE, null, ex);
+        }
+      }
+    }
+    
+    private String generateFileContents() {
+      String contents = "";
+      for(NetworkNode node: nodes) {
+        contents += node.toString() + "\n";
+      }
+      
+      for(NetworkConnection con : connections) {
+        contents += con.toString() + "\n";
+      }
+      
+      return contents;
     }
 
     /**
@@ -100,6 +164,8 @@ public class NetworkModel
         areChangesSaved = false;
         nodes.add(newNode);
         newNode.setNetwork(this);
+        for(ModelListener listener : listeners)
+          if(listener != null) listener.NodeAdded(newNode);
     }
 
     /**
@@ -123,7 +189,9 @@ public class NetworkModel
      */
 	public void removeNode(int i){
         areChangesSaved = false;
-        nodes.remove(i);
+        NetworkNode node = nodes.remove(i);
+        for(ModelListener listener : listeners)
+          if(listener != null) listener.NodeRemoved(node);
     }
 
     /**
@@ -138,6 +206,8 @@ public class NetworkModel
         NetworkNode endNode = this.getNodeForName(newConnection.getNode2());
         newConnection.setStartNode(startNode);
         newConnection.setEndNode(endNode);
+        for(ModelListener listener : listeners)
+          if(listener != null) listener.ConnectionAdded(newConnection);
     }
 
     /**
@@ -161,7 +231,9 @@ public class NetworkModel
      */
 	public void removeConnection(int i){
         areChangesSaved = false;
-        connections.remove(i);
+        NetworkConnection connection = connections.remove(i);
+        for(ModelListener listener : listeners)
+          if(listener != null) listener.ConnectionRemove(connection);
     }
     
     public NetworkNode getMaxXNode() {
@@ -200,11 +272,15 @@ public class NetworkModel
     }
     
     public void nodeChanged(NetworkNode node) {
-      if(this.listener != null) this.listener.NodeChanged(node);
+      areChangesSaved = false;
+      for(ModelListener listener : listeners)
+        if(listener != null) listener.NodeChanged(node);
     }
     
     public void connectionChanged(NetworkConnection connection) {
-      if(this.listener != null) this.listener.ConnectionChanged(connection);
+      areChangesSaved = false;
+      for(ModelListener listener : listeners)
+        if(listener != null) listener.ConnectionChanged(connection);
     }
 
     /**
